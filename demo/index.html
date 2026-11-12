@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>校准证书辅助审核 · 批量审核演示</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="tailwind.css">
+  <style>
+    :root {
+      --bg-app: #F4F5F7;
+      --bg-card: #FFFFFF;
+      --fg-main: #181C20;
+      --fg-muted: #5A626E;
+      --line: #D5D9E0;
+      /* 严格固定颜色语义：琥珀色 = 系统介入/提示；红色 = 错误/超差边界；灰蓝 = 无法核验/中性 */
+      --err-fg: #B91C1C;
+      --err-bg: #FEF2F2;
+      --err-border: #FCA5A5;
+      --amber-fg: #B45309;
+      --amber-bg: #FDF3E1;
+      --amber-border: #F59E0B;
+      --slate-fg: #334155;
+      --slate-bg: #F1F5F9;
+      --slate-border: #94A3B8;
+      --ok-fg: #15803D;
+      --ok-bg: #F0FDF4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background-color: var(--bg-app);
+      color: var(--fg-main);
+      font-family: "Noto Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13.5px;
+      line-height: 1.5;
+      overflow: hidden;
+      height: 100vh;
+    }
+    .num-mono {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    /* PDF 原文红框/琥珀框/灰蓝框叠加层 */
+    .bbox-overlay {
+      position: absolute;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      z-index: 20;
+      border-radius: 2px;
+    }
+    .bbox-overlay.sev-error {
+      border: 2px solid #DC2626;
+      background-color: rgba(220, 38, 38, 0.10);
+    }
+    .bbox-overlay.sev-warn {
+      border: 2px solid #D97706;
+      background-color: rgba(217, 119, 6, 0.10);
+    }
+    .bbox-overlay.sev-unverifiable {
+      border: 2px dashed #475569;
+      background-color: rgba(71, 85, 105, 0.12);
+    }
+    .bbox-overlay:hover, .bbox-overlay.active-box {
+      z-index: 30;
+      transform: scale(1.015);
+    }
+    .bbox-overlay.sev-error.active-box {
+      background-color: rgba(220, 38, 38, 0.22);
+      box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.28);
+    }
+    .bbox-overlay.sev-warn.active-box {
+      background-color: rgba(217, 119, 6, 0.22);
+      box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.28);
+    }
+    .bbox-overlay.sev-unverifiable.active-box {
+      background-color: rgba(71, 85, 105, 0.24);
+      box-shadow: 0 0 0 4px rgba(71, 85, 105, 0.28);
+    }
+    .bbox-tag {
+      position: absolute;
+      top: -19px;
+      right: -2px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 2px;
+      white-space: nowrap;
+      line-height: 1.3;
+      letter-spacing: 0.02em;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .bbox-tag.sev-error { background: #DC2626; color: #FFFFFF; }
+    .bbox-tag.sev-warn { background: #B45309; color: #FFFFFF; }
+    .bbox-tag.sev-unverifiable { background: #475569; color: #FFFFFF; }
+
+    @keyframes pulseRing {
+      0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.65); }
+      70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+    }
+    .pulse-focus {
+      animation: pulseRing 1.2s ease-out 2;
+    }
+
+    /* 滚动条精简 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+    /* ==================== 批量审核 (sec-batch) 专属样式 ==================== */
+    .batch-row-error {
+      background-color: #FEF2F2;
+      border-left: 4px solid #DC2626;
+    }
+    .batch-row-error:hover { background-color: #FEE2E2; }
+    .batch-row-unverifiable {
+      background-color: #F1F5F9;
+      border-left: 4px dashed #475569;
+    }
+    .batch-row-unverifiable:hover { background-color: #E2E8F0; }
+    .batch-row-warn {
+      background-color: #FDF3E1;
+      border-left: 4px solid #F59E0B;
+    }
+    .batch-row-warn:hover { background-color: #FDE68A; }
+    .batch-row-clean {
+      background-color: #FFFFFF;
+      border-left: 4px solid transparent;
+    }
+    .batch-row-clean:hover { background-color: #F8FAFC; }
+    .batch-dropzone-active {
+      border-color: #D97706 !important;
+      background-color: #FDF3E1 !important;
+    }
+
+  </style>
+</head>
+<body class="flex flex-col h-screen select-none">
+
+  <!-- ==================== 顶部栏 ==================== -->
+  <header class="h-12 bg-white border-b border-slate-300 px-4 flex items-center justify-between shrink-0 z-40">
+    <div class="flex items-center gap-3">
+      <span class="font-bold text-slate-900 text-sm tracking-tight">校准证书辅助审核 · 批量审核演示</span>
+      <span class="text-slate-300">|</span>
+      <div class="flex items-center gap-2 text-xs text-slate-600">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300 font-medium">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+          确定性规则引擎（判定只靠程序，不输出通过/不通过的结论）
+        </span>
+        <span id="backendStatusBadge" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 num-mono text-[11px]">
+          ● 本地实时版
+        </span>
+      </div>
+    </div>
+    <div class="hidden xl:flex items-center gap-3 text-xs bg-slate-50 px-2.5 py-1 rounded border border-slate-200">
+      <span class="text-slate-500 font-medium">严重度与颜色语义：</span>
+      <span class="inline-flex items-center gap-1 text-red-700 font-semibold"><i class="w-2.5 h-2.5 rounded-sm bg-red-600 inline-block"></i>错误 / 超差边界</span>
+      <span class="inline-flex items-center gap-1 text-amber-700 font-semibold"><i class="w-2.5 h-2.5 rounded-sm bg-amber-600 inline-block"></i>提示 / 系统介入</span>
+      <span class="inline-flex items-center gap-1 text-slate-700 font-semibold"><i class="w-2.5 h-2.5 rounded-sm bg-slate-500 inline-block"></i>无法核验 / 中性</span>
+    </div>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+    <!-- 左侧导航（演示版只保留批量审核一个入口） -->
+    <aside class="w-52 bg-slate-900 text-slate-200 flex flex-col justify-between shrink-0 border-r border-slate-800">
+      <div>
+        <div class="px-4 py-3 border-b border-slate-800 text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
+          功能模块
+        </div>
+        <nav class="p-2 space-y-1" id="mainNav">
+          <button id="nav-batch" class="w-full flex items-center justify-between px-3 py-2.5 rounded text-left text-xs font-bold bg-amber-600 text-white shadow-sm transition">
+            <span class="flex items-center gap-2.5">
+              <span class="text-sm">⚡</span>
+              <span>批量审核</span>
+            </span>
+            <span class="px-1.5 py-0.5 text-[10px] rounded bg-amber-500/20 text-amber-100 border border-amber-300/50" id="batchNavBadge">实时</span>
+          </button>
+        </nav>
+      </div>
+      <div class="p-3 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
+        <div class="flex items-center justify-between">
+          <span>解析引擎</span>
+          <span class="num-mono text-slate-200">PyMuPDF 坐标重排</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>判定方式</span>
+          <span class="num-mono text-amber-400">只靠程序 · 不调模型</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="flex-1 overflow-y-auto bg-[#F4F5F7]" id="mainWorkspace">
+      <!-- ====================================================================== -->
+      <!-- 模块 5：批量审核 (Batch Audit · 实时连接本地确定性审核引擎) -->
+      <!-- ====================================================================== -->
+      <section id="sec-batch" class="p-5 max-w-[1440px] mx-auto space-y-5 relative">
+        <!-- 未连接审核引擎错误态（当后端未启动或请求失败时独立呈现，不含任何数字） -->
+        <div id="batchErrorPanel" class="hidden bg-white border-2 border-red-300 rounded-md p-12 text-center shadow-sm space-y-4 my-8">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#FEF2F2] text-[#B91C1C] border border-[#FCA5A5] font-bold text-lg">!</div>
+          <div class="text-base font-bold text-[#B91C1C]" id="batchErrorText">
+            未连接审核引擎，请先在终端运行 python3 demo/server.py
+          </div>
+          <div class="pt-2">
+            <button onclick="batchRetryConnect()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-semibold transition shadow-sm">
+              重新检测连接
+            </button>
+          </div>
+        </div>
+
+        <!-- 状态 ①：就绪态 (Ready) -->
+        <div id="batchReadyPanel" class="hidden bg-white border border-slate-300 rounded-md p-8 shadow-sm space-y-6">
+          <div class="flex items-start justify-between border-b border-slate-200 pb-4">
+            <div>
+              <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                <span>批量证书确定性审核引擎</span>
+                <span class="text-xs font-normal px-2 py-0.5 rounded bg-[#FDF3E1] text-[#B45309] border border-[#F59E0B]">高吞吐多进程解析 + 规则判定</span>
+              </h2>
+              <p class="text-xs text-slate-500 mt-1">支持一键运行内置批量演示样本集，或直接拖入多份校准证书 PDF 实时执行坐标重排与规则核验。</p>
+            </div>
+            <div class="text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded border border-slate-200 font-medium">
+              数据来源：本地审核引擎（实时）· 判定只靠程序，不调用模型
+            </div>
+          </div>
+
+          <div class="grid grid-cols-12 gap-6 items-stretch py-2">
+            <!-- 左：一键运行内置样本集 -->
+            <div class="col-span-6 bg-[#FDF3E1]/60 border-2 border-[#F59E0B] rounded-md p-6 flex flex-col justify-between space-y-5">
+              <div class="space-y-2">
+                <span class="inline-block px-2 py-0.5 rounded bg-amber-700 text-white text-[11px] font-bold">推荐入口</span>
+                <h3 class="text-lg font-bold text-slate-900">运行内置批量校准证书样本集</h3>
+                <p class="text-xs text-slate-700 leading-relaxed">
+                  直接调用本地审核引擎扫描内置样本目录，实时统计耗时、吞吐速度与需人工复核证书队列，并按严重度自动排序。
+                </p>
+              </div>
+              <div>
+                <button id="batchStartBulkBtn" onclick="batchStartSampleBulk()" class="w-full py-3.5 px-5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-sm rounded-md shadow transition flex items-center justify-center gap-2">
+                  <span>⚡</span>
+                  <span>运行 1000 份演示样本</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 右：拖入 / 选择多份 PDF -->
+            <div id="batchDropZone"
+                 ondragover="batchHandleDragOver(event)"
+                 ondragleave="batchHandleDragLeave(event)"
+                 ondrop="batchHandleDrop(event)"
+                 onclick="document.getElementById('batchFilesInput').click()"
+                 class="col-span-6 border-2 border-dashed border-slate-300 hover:border-amber-600 bg-slate-50 hover:bg-amber-50/30 rounded-md p-6 flex flex-col items-center justify-center text-center cursor-pointer transition space-y-3">
+              <div class="w-12 h-12 rounded-full bg-white border border-slate-300 flex items-center justify-center text-xl shadow-sm">📄</div>
+              <div class="space-y-1">
+                <div class="text-sm font-bold text-slate-900">拖入或点击选择多份校准证书 PDF</div>
+                <div class="text-xs text-slate-500">支持一次选择或拖入任意份文字版 PDF 证书（字段名 <code class="num-mono">files</code>）</div>
+              </div>
+              <input type="file" id="batchFilesInput" accept=".pdf,application/pdf" multiple class="hidden" onchange="batchHandleFileSelect(this.files)" />
+              <span class="px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-700 shadow-sm">
+                选择本地 PDF 文件…
+              </span>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>引擎状态：已连接本地后端接口</span>
+            <span>数据来源：本地审核引擎（实时）· 判定只靠程序，不调用模型</span>
+          </div>
+        </div>
+
+        <!-- 状态 ②：运行中 (Running) -->
+        <div id="batchRunningPanel" class="hidden bg-white border border-slate-300 rounded-md p-10 shadow-sm space-y-8">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-600 animate-ping"></span>
+              <span class="font-bold text-slate-900 text-sm">正在执行批量确定性规则核验…</span>
+              <span class="text-xs text-slate-500 num-mono" id="batchRunningJobId"></span>
+            </div>
+            <span class="text-xs text-slate-500">数据来源：本地审核引擎（实时）· 判定只靠程序，不调用模型</span>
+          </div>
+
+          <!-- 中央超大号等宽跳动计数器 -->
+          <div class="text-center py-4 space-y-3">
+            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">已审份数 / 总份数</div>
+            <div class="text-5xl font-bold text-slate-900 num-mono tracking-tight" id="batchRunningCounter"></div>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="max-w-3xl mx-auto space-y-2">
+            <div class="w-full h-3.5 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+              <div id="batchProgressBar" class="h-full bg-amber-600 transition-all duration-150" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- 下方三项实时副指标 -->
+          <div class="max-w-3xl mx-auto grid grid-cols-3 gap-4 pt-2">
+            <div class="p-4 rounded border border-slate-200 bg-slate-50 text-center">
+              <div class="text-xs text-slate-500">已用时</div>
+              <div class="mt-1 text-2xl font-bold text-slate-900 num-mono">
+                <span id="batchRunningElapsed"></span>
+                <span class="text-xs font-normal text-slate-500">秒</span>
+              </div>
+            </div>
+            <div class="p-4 rounded border border-slate-200 bg-slate-50 text-center">
+              <div class="text-xs text-slate-500">实时速度</div>
+              <div class="mt-1 text-2xl font-bold text-amber-800 num-mono">
+                <span id="batchRunningSpeed"></span>
+                <span class="text-xs font-normal text-slate-500">份/小时</span>
+              </div>
+            </div>
+            <div class="p-4 rounded border border-red-200 bg-[#FEF2F2] text-center">
+              <div class="text-xs text-[#B91C1C] font-medium">已发现需要人看的份数</div>
+              <div class="mt-1 text-2xl font-bold text-[#B91C1C] num-mono">
+                <span id="batchRunningFlagged"></span>
+                <span class="text-xs font-normal text-[#B91C1C]">份</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 状态 ③：结果态 (Done) -->
+        <div id="batchDonePanel" class="hidden space-y-4">
+          <!-- 顶部结论横幅 -->
+          <div class="bg-white border-2 border-slate-800 rounded-md p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="text-xl font-bold text-slate-900 num-mono" id="batchDoneHeadline"></div>
+              <div class="text-sm font-semibold text-emerald-800 num-mono" id="batchDoneSubline"></div>
+              <div class="text-[11px] text-slate-500 pt-0.5">
+                数据来源：本地审核引擎（实时）· 判定只靠程序，不调用模型
+              </div>
+            </div>
+
+            <!-- 三档严重度汇总与重新运行按钮 -->
+            <div class="flex items-center gap-4">
+              <div class="flex items-center gap-2.5 text-xs num-mono">
+                <div class="px-3 py-2 rounded bg-[#FEF2F2] border border-[#FCA5A5] text-[#B91C1C]">
+                  <span class="text-[11px] font-sans">错误：</span>
+                  <b class="text-base font-bold" id="batchDoneSevErr"></b>
+                </div>
+                <div class="px-3 py-2 rounded bg-[#F1F5F9] border border-[#94A3B8] text-[#334155]">
+                  <span class="text-[11px] font-sans">无法核验：</span>
+                  <b class="text-base font-bold" id="batchDoneSevUnver"></b>
+                </div>
+                <div class="px-3 py-2 rounded bg-[#FDF3E1] border border-[#F59E0B] text-[#B45309]">
+                  <span class="text-[11px] font-sans">提示：</span>
+                  <b class="text-base font-bold" id="batchDoneSevWarn"></b>
+                </div>
+              </div>
+
+              <button onclick="batchResetToReady()" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-bold shadow-sm transition">
+                ↻ 重新运行
+              </button>
+            </div>
+          </div>
+
+          <!-- 筛选切换与列表容器 -->
+          <div class="bg-white border border-slate-300 rounded-md shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-1.5 bg-slate-200/80 p-1 rounded text-xs" id="batchFilterTabs">
+                <button onclick="batchSetFilter('all')" id="batchTab-all" class="px-3 py-1 rounded font-bold bg-white text-slate-900 shadow-sm">
+                  全部 (<span class="num-mono" id="batchTabCountAll"></span>)
+                </button>
+                <button onclick="batchSetFilter('flagged')" id="batchTab-flagged" class="px-3 py-1 rounded font-medium text-slate-700 hover:text-slate-900">
+                  需要人看 (<span class="num-mono" id="batchTabCountFlagged"></span>)
+                </button>
+                <button onclick="batchSetFilter('reviewed')" id="batchTab-reviewed" class="px-3 py-1 rounded font-medium text-slate-700 hover:text-slate-900">
+                  已处理 (<span class="num-mono" id="batchTabCountReviewed"></span>)
+                </button>
+                <button onclick="batchSetFilter('clean')" id="batchTab-clean" class="px-3 py-1 rounded font-medium text-slate-700 hover:text-slate-900">
+                  无问题 (<span class="num-mono" id="batchTabCountClean"></span>)
+                </button>
+              </div>
+
+              <!-- 分页控件（保持后端原始 rank 顺序，避免千行 DOM 卡顿） -->
+              <div class="flex items-center gap-2 text-xs">
+                <span class="text-slate-500 num-mono" id="batchPageInfo"></span>
+                <button onclick="batchChangePage(-1)" id="batchPrevPageBtn" class="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed">上一页</button>
+                <button onclick="batchChangePage(1)" id="batchNextPageBtn" class="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed">下一页</button>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 bg-slate-50/80 text-slate-500">
+                    <th class="py-2.5 px-3 font-medium w-16">序号</th>
+                    <th class="py-2.5 px-3 font-medium">文件名</th>
+                    <th class="py-2.5 px-3 font-medium">证书编号</th>
+                    <th class="py-2.5 px-3 font-medium">器具名称 + 型号</th>
+                    <th class="py-2.5 px-3 font-medium">三档计数 (错误 / 无法核验 / 提示)</th>
+                    <th class="py-2.5 px-3 font-medium">最严重发现原因</th>
+                  </tr>
+                </thead>
+                <tbody id="batchResultsTbody" class="divide-y divide-slate-200">
+                  <!-- 由 batchRenderTableRows() 严格按后端返回顺序渲染 -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 状态 ④：单份详情抽屉 (Slide-over Drawer) -->
+        <div id="batchDetailDrawer" style="margin-top:0" class="fixed inset-0 bg-slate-900/50 z-50 hidden flex justify-end">
+          <div class="bg-white w-full max-w-[1180px] h-full shadow-2xl border-l border-slate-300 flex flex-col overflow-hidden select-text">
+            <!-- 抽屉顶部栏 -->
+            <div class="h-12 px-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div class="flex items-center gap-3">
+                <span class="px-2 py-0.5 rounded bg-amber-600 text-white font-bold text-xs num-mono" id="batchDrawerCertNo"></span>
+                <span class="font-bold text-sm num-mono" id="batchDrawerFile"></span>
+                <span class="text-xs text-slate-300" id="batchDrawerInstrument"></span>
+              </div>
+              <button onclick="batchCloseDrawer()" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs font-semibold transition">
+                ✕ 关闭详情
+              </button>
+            </div>
+
+            <!-- 抽屉主体：左 PDF 渲染图 + bbox 叠加框 / 右 只读发现列表 -->
+            <div class="flex-1 flex overflow-hidden">
+              <!-- 左栏：真实 PDF 页渲染 PNG + 坐标框叠加 -->
+              <div class="flex-1 bg-slate-200/80 flex flex-col overflow-hidden border-r border-slate-300">
+                <div class="h-10 bg-white border-b border-slate-300 px-4 flex items-center justify-between shrink-0">
+                  <div class="flex items-center gap-1.5" id="batchDrawerPageTabs">
+                    <!-- 页码切换 1..page_count -->
+                  </div>
+                  <span class="text-[11px] text-slate-500 num-mono" id="batchDrawerPageSizeInfo"></span>
+                </div>
+
+                <div class="flex-1 overflow-auto p-5 flex justify-center items-start" id="batchDrawerImgViewport">
+                  <div id="batchDrawerImgWrapper" class="relative inline-block bg-white shadow-md border border-slate-300">
+                    <img id="batchDrawerImg"
+                         alt="证书页面渲染图"
+                         onload="batchRenderDrawerBboxes()"
+                         class="block max-w-[640px] w-full h-auto select-none" />
+                    <div id="batchDrawerBboxLayer" class="absolute inset-0 pointer-events-auto"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 右栏：发现列表 + 审核员确认/驳回（只记在本次运行里，不改规则） -->
+              <div class="w-[440px] bg-white flex flex-col shrink-0">
+                <div class="p-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                  <div>
+                    <h3 class="font-bold text-slate-900 text-sm">机器检出 → 审核员确认 / 驳回</h3>
+                    <p class="text-[11px] text-slate-500" id="batchDrawerFindingsSummary"></p>
+                  </div>
+                  <div class="flex flex-col items-end gap-1">
+                    <button id="batchConfirmAllBtn" onclick="batchConfirmAllInDrawer()"
+                            class="px-2.5 py-1 rounded text-xs font-semibold transition bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      ✓ 本份全部确认
+                    </button>
+                    <span class="text-[10px] text-slate-400">只记在本次运行里，不改规则</span>
+                  </div>
+                </div>
+                <div id="batchDrawerFindingsList" class="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50/40">
+                  <!-- 只读发现卡片 -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 全局轻提示 Toast -->
+  <div id="toastBanner" class="fixed bottom-5 right-5 bg-slate-900 text-white px-4 py-2.5 rounded shadow-lg border border-amber-500 text-xs font-medium z-50 hidden flex items-center gap-2">
+    <span class="text-amber-400">●</span>
+    <span id="toastText">操作成功</span>
+  </div>
+
+  <script>
+    function showToast(msg) {
+      const el = document.getElementById("toastBanner");
+      document.getElementById("toastText").textContent = msg;
+      el.classList.remove("hidden");
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => el.classList.add("hidden"), 3200);
+    }
+
+    function sevBadgeHtml(sev) {
+      if (sev === "错误") {
+        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#FEF2F2] text-[#B91C1C] border border-[#FCA5A5]">● 错误</span>`;
+      }
+      if (sev === "提示") {
+        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#FDF3E1] text-[#B45309] border border-[#F59E0B]">▲ 提示</span>`;
+      }
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#F1F5F9] text-[#334155] border border-[#94A3B8]">◌ 无法核验</span>`;
+    }
+
+    function sevClassKey(sev) {
+      if (sev === "错误") return "sev-error";
+      if (sev === "提示") return "sev-warn";
+      return "sev-unverifiable";
+    }
+
+    // 批量审核
+    const batchState = {
+      view: "ready", // 'error' | 'ready' | 'running' | 'done'
+      jobId: null,
+      pollTimer: null,
+      resultsData: null,
+      filter: "all", // 'all' | 'flagged' | 'reviewed' | 'clean'
+      pageIndex: 1,
+      pageSize: 50,
+      drawerOpen: false,
+      drawerFile: null,
+      drawerCert: null,
+      drawerFindings: [],
+      drawerPage: 1,
+      drawerActiveFindingId: null
+    };
+
+    function batchEscapeHtml(str) {
+      return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function batchSetView(viewName) {
+      batchState.view = viewName;
+      const panels = {
+        error: document.getElementById("batchErrorPanel"),
+        ready: document.getElementById("batchReadyPanel"),
+        running: document.getElementById("batchRunningPanel"),
+        done: document.getElementById("batchDonePanel")
+      };
+      Object.keys(panels).forEach(k => {
+        if (!panels[k]) return;
+        if (k === viewName) panels[k].classList.remove("hidden");
+        else panels[k].classList.add("hidden");
+      });
+    }
+
+    function batchShowEngineError(msg) {
+      batchStopPolling();
+      batchCloseDrawer();
+      const errText = document.getElementById("batchErrorText");
+      if (errText) {
+        errText.textContent = msg || "未连接审核引擎，请先在终端运行 python3 demo/server.py";
+      }
+      batchSetView("error");
+    }
+
+    function batchStopPolling() {
+      if (batchState.pollTimer) {
+        clearInterval(batchState.pollTimer);
+        batchState.pollTimer = null;
+      }
+    }
+
+    async function batchCheckEngineConnected() {
+      try {
+        const resp = await fetch("/api/batch/__probe__/progress", {
+          method: "GET",
+          cache: "no-store"
+        });
+        const contentType = resp.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          return true;
+        }
+        const statusResp = await fetch("/api/status", { method: "GET", cache: "no-store" });
+        const statusCt = statusResp.headers.get("content-type") || "";
+        return statusResp.ok && statusCt.includes("application/json");
+      } catch (err) {
+        return false;
+      }
+    }
+
+    async function batchRenderModule() {
+      const connected = await batchCheckEngineConnected();
+      if (!connected) {
+        batchShowEngineError();
+        return;
+      }
+      if (batchState.view === "error") {
+        batchSetView("ready");
+      } else {
+        batchSetView(batchState.view);
+      }
+    }
+
+    async function batchRetryConnect() {
+      const connected = await batchCheckEngineConnected();
+      if (!connected) {
+        batchShowEngineError();
+        return;
+      }
+      batchSetView("ready");
+    }
+
+    function batchResetToReady() {
+      batchStopPolling();
+      batchCloseDrawer();
+      batchState.jobId = null;
+      batchState.resultsData = null;
+      batchRenderModule();
+    }
+
+    // 触发方式 1：运行 1000 份演示样本
+    async function batchStartSampleBulk() {
+      batchStopPolling();
+      try {
+        const r = await fetch("/api/batch/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sample: "bulk" })
+        });
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) throw new Error("start failed");
+        const startData = await r.json();
+        if (!r.ok) {
+          // 服务端给出了明确原因（例如示例批次还没生成），原样显示
+          batchShowEngineError(startData.error || "启动失败");
+          return;
+        }
+        if (!startData || !startData.job_id) throw new Error("invalid start response");
+        batchEnterRunningState(startData.job_id, startData.total);
+      } catch (err) {
+        batchShowEngineError();
+      }
+    }
+
+    // 触发方式 2：拖入或选择多份 PDF
+    function batchHandleDragOver(evt) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      const dz = document.getElementById("batchDropZone");
+      if (dz) dz.classList.add("batch-dropzone-active");
+    }
+
+    function batchHandleDragLeave(evt) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      const dz = document.getElementById("batchDropZone");
+      if (dz) dz.classList.remove("batch-dropzone-active");
+    }
+
+    function batchHandleDrop(evt) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      const dz = document.getElementById("batchDropZone");
+      if (dz) dz.classList.remove("batch-dropzone-active");
+      const files = evt.dataTransfer ? evt.dataTransfer.files : null;
+      if (files && files.length > 0) {
+        batchHandleFileSelect(files);
+      }
+    }
+
+    async function batchHandleFileSelect(fileList) {
+      if (!fileList || fileList.length === 0) return;
+      const pdfFiles = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith(".pdf") || f.type === "application/pdf");
+      if (pdfFiles.length === 0) {
+        showToast("请选择 PDF 格式的校准证书文件");
+        return;
+      }
+      batchStopPolling();
+      try {
+        const fd = new FormData();
+        pdfFiles.forEach(f => fd.append("files", f));
+        const r = await fetch("/api/batch/start", {
+          method: "POST",
+          body: fd
+        });
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) throw new Error("upload start failed");
+        const startData = await r.json();
+        if (!r.ok) {
+          batchShowEngineError(startData.error || "上传失败");
+          return;
+        }
+        const inputEl = document.getElementById("batchFilesInput");
+        if (inputEl) inputEl.value = "";
+        if (!startData || !startData.job_id) throw new Error("invalid start response");
+        batchEnterRunningState(startData.job_id, startData.total);
+      } catch (err) {
+        batchShowEngineError();
+      }
+    }
+
+    // 状态 ②：进入运行中并每 250ms 轮询进度
+    function batchEnterRunningState(jobId, initialTotal) {
+      batchState.jobId = jobId;
+      batchSetView("running");
+      document.getElementById("batchRunningJobId").textContent = `任务 #${jobId}`;
+      document.getElementById("batchRunningCounter").textContent = `0 / ${initialTotal ?? 0}`;
+      document.getElementById("batchRunningElapsed").textContent = "0.0";
+      document.getElementById("batchRunningSpeed").textContent = "0";
+      document.getElementById("batchRunningFlagged").textContent = "0";
+      document.getElementById("batchProgressBar").style.width = "0%";
+
+      batchPollProgressOnce();
+      batchState.pollTimer = setInterval(batchPollProgressOnce, 250);
+    }
+
+    async function batchPollProgressOnce() {
+      if (!batchState.jobId) return;
+      try {
+        const r = await fetch(`/api/batch/${encodeURIComponent(batchState.jobId)}/progress`, {
+          method: "GET",
+          cache: "no-store"
+        });
+        const ct = r.headers.get("content-type") || "";
+        if (!r.ok || !ct.includes("application/json")) {
+          throw new Error("progress request failed");
+        }
+        const prog = await r.json();
+        if (prog.error) {
+          batchShowEngineError("审核没能跑完：" + prog.error);
+          return;
+        }
+
+        const done = Number(prog.done ?? 0);
+        const total = Number(prog.total ?? 0);
+        const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+        document.getElementById("batchRunningCounter").textContent = `${done} / ${total}`;
+        document.getElementById("batchRunningElapsed").textContent = Number(prog.elapsed_sec ?? 0).toFixed(1);
+        document.getElementById("batchRunningSpeed").textContent = String(prog.throughput_per_hour ?? 0);
+        document.getElementById("batchRunningFlagged").textContent = String(prog.flagged ?? 0);
+        document.getElementById("batchProgressBar").style.width = `${pct}%`;
+
+        if (prog.finished === true) {
+          batchStopPolling();
+          await batchFetchAndRenderResults(batchState.jobId);
+        }
+      } catch (err) {
+        batchShowEngineError();
+      }
+    }
+
+    // 状态 ③：拉取并渲染批量审核结果
+    async function batchFetchAndRenderResults(jobId) {
+      try {
+        const r = await fetch(`/api/batch/${encodeURIComponent(jobId)}/results`, {
+          method: "GET",
+          cache: "no-store"
+        });
+        const ct = r.headers.get("content-type") || "";
+        if (!r.ok || !ct.includes("application/json")) {
+          throw new Error("results request failed");
+        }
+        const resData = await r.json();
+
+        batchState.resultsData = resData;
+        batchState.filter = "all";
+        batchState.pageIndex = 1;
+        batchRenderDoneView();
+        batchSetView("done");
+      } catch (err) {
+        batchShowEngineError();
+      }
+    }
+
+    function batchRenderDoneView() {
+      const d = batchState.resultsData;
+      if (!d) return;
+
+      const total = Number(d.total ?? 0);
+      const elapsed = Number(d.elapsed_sec ?? 0).toFixed(1);
+      const flagged = Number(d.flagged ?? 0);
+      const cleanCount = Math.max(0, total - flagged);
+      const bySev = d.by_severity || {};
+
+      document.getElementById("batchDoneHeadline").textContent =
+        `${total} 份 · ${elapsed} 秒审完 · ${flagged} 份需要人看`;
+      document.getElementById("batchDoneSubline").textContent =
+        `其余 ${cleanCount} 份可直接放行`;
+
+      document.getElementById("batchDoneSevErr").textContent = String(bySev["错误"] ?? 0);
+      document.getElementById("batchDoneSevUnver").textContent = String(bySev["无法核验"] ?? 0);
+      document.getElementById("batchDoneSevWarn").textContent = String(bySev["提示"] ?? 0);
+
+      const certs = Array.isArray(d.certs) ? d.certs : [];
+      const reviewedCertsCount = certs.filter(c => c.needs_review === true && c.review?.reviewed).length;
+      const flaggedCertsCount = certs.filter(c => c.needs_review === true).length - reviewedCertsCount;
+      const cleanCertsCount = certs.filter(c => !c.needs_review).length;
+
+      document.getElementById("batchTabCountAll").textContent = String(certs.length);
+      document.getElementById("batchTabCountFlagged").textContent = String(flaggedCertsCount);
+      document.getElementById("batchTabCountClean").textContent = String(cleanCertsCount);
+      document.getElementById("batchTabCountReviewed").textContent = String(reviewedCertsCount);
+      document.getElementById("batchDoneSubline").textContent =
+        `其余 ${cleanCount} 份可直接放行 · 审核员已处理 ${reviewedCertsCount} / ${flagged} 份`;
+
+      batchUpdateFilterTabStyles();
+      batchRenderTableRows();
+    }
+
+    function batchSetFilter(filterKey) {
+      batchState.filter = filterKey;
+      batchState.pageIndex = 1;
+      batchUpdateFilterTabStyles();
+      batchRenderTableRows();
+    }
+
+    function batchUpdateFilterTabStyles() {
+      ["all", "flagged", "reviewed", "clean"].forEach(k => {
+        const btn = document.getElementById(`batchTab-${k}`);
+        if (!btn) return;
+        if (k === batchState.filter) {
+          btn.className = "px-3 py-1 rounded font-bold bg-white text-slate-900 shadow-sm";
+        } else {
+          btn.className = "px-3 py-1 rounded font-medium text-slate-700 hover:text-slate-900";
+        }
+      });
+    }
+
+    function batchGetFilteredCerts() {
+      const certs = Array.isArray(batchState.resultsData?.certs) ? batchState.resultsData.certs : [];
+      // 严格保持后端返回的排序顺序，前端绝不二次排序
+      if (batchState.filter === "flagged") {
+        return certs.filter(c => c.needs_review === true && !c.review?.reviewed);
+      }
+      if (batchState.filter === "reviewed") {
+        return certs.filter(c => c.needs_review === true && c.review?.reviewed);
+      }
+      if (batchState.filter === "clean") {
+        return certs.filter(c => !c.needs_review);
+      }
+      return certs;
+    }
+
+    function batchChangePage(delta) {
+      const filtered = batchGetFilteredCerts();
+      const totalPages = Math.max(1, Math.ceil(filtered.length / batchState.pageSize));
+      const next = Math.min(totalPages, Math.max(1, batchState.pageIndex + delta));
+      if (next !== batchState.pageIndex) {
+        batchState.pageIndex = next;
+        batchRenderTableRows();
+      }
+    }
+
+    function batchRenderTableRows() {
+      const filtered = batchGetFilteredCerts();
+      const totalRows = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(totalRows / batchState.pageSize));
+      if (batchState.pageIndex > totalPages) batchState.pageIndex = totalPages;
+
+      const startIdx = (batchState.pageIndex - 1) * batchState.pageSize;
+      const endIdx = Math.min(totalRows, startIdx + batchState.pageSize);
+      const pageItems = filtered.slice(startIdx, endIdx);
+
+      const pageInfo = document.getElementById("batchPageInfo");
+      if (pageInfo) {
+        pageInfo.textContent = totalRows > 0
+          ? `显示 ${startIdx + 1}–${endIdx} / 共 ${totalRows} 份 (第 ${batchState.pageIndex}/${totalPages} 页)`
+          : `共 0 份`;
+      }
+      const prevBtn = document.getElementById("batchPrevPageBtn");
+      const nextBtn = document.getElementById("batchNextPageBtn");
+      if (prevBtn) prevBtn.disabled = batchState.pageIndex <= 1;
+      if (nextBtn) nextBtn.disabled = batchState.pageIndex >= totalPages;
+
+      const tbody = document.getElementById("batchResultsTbody");
+      if (!tbody) return;
+
+      if (pageItems.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-8 text-center text-slate-500 text-xs">当前筛选条件下无证书记录</td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = pageItems.map(c => {
+        const counts = c.counts || {};
+        const errCnt = Number(counts["错误"] ?? 0);
+        const unverCnt = Number(counts["无法核验"] ?? 0);
+        const warnCnt = Number(counts["提示"] ?? 0);
+
+        // 整行底色由该份最严重的一条决定
+        let rowClass = "batch-row-clean";
+        if (errCnt > 0) rowClass = "batch-row-error";
+        else if (unverCnt > 0) rowClass = "batch-row-unverifiable";
+        else if (warnCnt > 0) rowClass = "batch-row-warn";
+
+        const instName = c.instrument?.name || "—";
+        const instModel = c.instrument?.model || "";
+        const topFinding = c.top_finding;
+
+        let topReasonHtml = `<span class="text-slate-400">无异常发现，可直接放行</span>`;
+        if (topFinding && topFinding.reason) {
+          const sevBadge = sevBadgeHtml(topFinding.severity);
+          topReasonHtml = `
+            <div class="flex items-center gap-1.5 max-w-[440px]">
+              ${sevBadge}
+              <span class="num-mono font-bold text-slate-800 shrink-0">${batchEscapeHtml(topFinding.rule_id || "")}</span>
+              <span class="truncate text-slate-800" title="${batchEscapeHtml(topFinding.reason)}">${batchEscapeHtml(topFinding.reason)}</span>
+            </div>
+          `;
+        }
+
+        const encodedFile = encodeURIComponent(c.file || "");
+        return `
+          <tr onclick="batchOpenCertDetail(decodeURIComponent('${encodedFile}'))"
+              class="${rowClass} transition cursor-pointer">
+            <td class="py-2.5 px-3 num-mono font-bold text-slate-800">#${batchEscapeHtml(c.rank)}${batchReviewRowBadge(c.review)}</td>
+            <td class="py-2.5 px-3 num-mono font-semibold text-slate-900">${batchEscapeHtml(c.file)}</td>
+            <td class="py-2.5 px-3 num-mono text-slate-800">${batchEscapeHtml(c.cert_no || "—")}</td>
+            <td class="py-2.5 px-3 text-slate-800">
+              <span>${batchEscapeHtml(instName)}</span>
+              <span class="num-mono font-semibold ml-1">${batchEscapeHtml(instModel)}</span>
+            </td>
+            <td class="py-2.5 px-3 num-mono space-x-1.5">
+              <span class="px-1.5 py-0.5 rounded text-[11px] ${errCnt > 0 ? 'bg-[#FEF2F2] text-[#B91C1C] border border-[#FCA5A5] font-bold' : 'bg-slate-100 text-slate-400'}">错误 ${errCnt}</span>
+              <span class="px-1.5 py-0.5 rounded text-[11px] ${unverCnt > 0 ? 'bg-[#F1F5F9] text-[#334155] border border-[#94A3B8] font-bold' : 'bg-slate-100 text-slate-400'}">无法核验 ${unverCnt}</span>
+              <span class="px-1.5 py-0.5 rounded text-[11px] ${warnCnt > 0 ? 'bg-[#FDF3E1] text-[#B45309] border border-[#F59E0B] font-semibold' : 'bg-slate-100 text-slate-400'}">提示 ${warnCnt}</span>
+            </td>
+            <td class="py-2.5 px-3">${topReasonHtml}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // 状态 ④：打开单份证书详情抽屉
+    async function batchOpenCertDetail(file) {
+      if (!file || !batchState.jobId) return;
+      try {
+        const url = `/api/batch/${encodeURIComponent(batchState.jobId)}/cert/${encodeURIComponent(file)}`;
+        const r = await fetch(url, { method: "GET", cache: "no-store" });
+        const ct = r.headers.get("content-type") || "";
+        if (!r.ok || !ct.includes("application/json")) {
+          throw new Error("cert detail request failed");
+        }
+        const detailData = await r.json();
+
+        batchState.drawerOpen = true;
+        batchState.drawerFile = file;
+        batchState.drawerCert = detailData.cert || {};
+        batchState.drawerFindings = Array.isArray(detailData.findings) ? detailData.findings : [];
+        batchState.drawerReview = detailData.review || null;
+        batchState.drawerActiveFindingId = batchState.drawerFindings[0]?.id || null;
+        batchState.drawerPage = batchState.drawerFindings[0]?.page || 1;
+
+        document.getElementById("batchDetailDrawer").classList.remove("hidden");
+        batchRenderDrawerContent();
+      } catch (err) {
+        batchShowEngineError();
+      }
+    }
+
+    function batchCloseDrawer() {
+      batchState.drawerOpen = false;
+      const drawer = document.getElementById("batchDetailDrawer");
+      if (drawer) drawer.classList.add("hidden");
+    }
+
+    function batchSelectDrawerPage(pageNo) {
+      batchState.drawerPage = pageNo;
+      batchRenderDrawerPageImage();
+      batchRenderDrawerPageTabs();
+    }
+
+    function batchFocusDrawerFinding(findingId) {
+      const f = batchState.drawerFindings.find(x => x.id === findingId);
+      if (!f) return;
+      batchState.drawerActiveFindingId = findingId;
+      if (f.page && f.page !== batchState.drawerPage) {
+        batchState.drawerPage = f.page;
+        batchRenderDrawerPageImage();
+        batchRenderDrawerPageTabs();
+      } else {
+        batchRenderDrawerBboxes();
+      }
+      batchRenderDrawerFindingsList();
+    }
+
+    function batchRenderDrawerContent() {
+      const cert = batchState.drawerCert || {};
+      document.getElementById("batchDrawerCertNo").textContent = cert.cert_no || "未识别编号";
+      document.getElementById("batchDrawerFile").textContent = batchState.drawerFile || cert.file || "";
+      const inst = cert.instrument || {};
+      document.getElementById("batchDrawerInstrument").textContent =
+        `${inst.name || ""} ${inst.model || ""} · 校准日 ${cert.calib_date || "—"}`;
+
+      batchRenderDrawerPageTabs();
+      batchRenderDrawerPageImage();
+      batchRenderDrawerFindingsList();
+    }
+
+    function batchRenderDrawerPageTabs() {
+      const cert = batchState.drawerCert || {};
+      const pageCount = Math.max(1, Number(cert.page_count || (cert.page_sizes_pt ? cert.page_sizes_pt.length : 3)));
+      const tabsEl = document.getElementById("batchDrawerPageTabs");
+      if (!tabsEl) return;
+
+      const buttons = [];
+      for (let p = 1; p <= pageCount; p++) {
+        const pFindings = batchState.drawerFindings.filter(f => f.page === p);
+        const hasErr = pFindings.some(f => f.severity === "错误");
+        const hasUnver = pFindings.some(f => f.severity === "无法核验");
+        const hasWarn = pFindings.some(f => f.severity === "提示");
+        let dot = "";
+        if (hasErr) dot = `<span class="w-2 h-2 rounded-full bg-red-600 inline-block"></span>`;
+        else if (hasUnver) dot = `<span class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>`;
+        else if (hasWarn) dot = `<span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>`;
+
+        const active = batchState.drawerPage === p;
+        buttons.push(`
+          <button onclick="batchSelectDrawerPage(${p})"
+                  class="px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition ${active ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+            <span>第 ${p} 页</span>
+            ${dot}
+          </button>
+        `);
+      }
+      tabsEl.innerHTML = buttons.join("");
+    }
+
+    function batchRenderDrawerPageImage() {
+      const imgEl = document.getElementById("batchDrawerImg");
+      const bboxLayer = document.getElementById("batchDrawerBboxLayer");
+      if (!imgEl || !bboxLayer) return;
+      bboxLayer.innerHTML = "";
+
+      const p = batchState.drawerPage;
+      imgEl.src = `/api/batch/${encodeURIComponent(batchState.jobId)}/page/${encodeURIComponent(batchState.drawerFile)}/${p}.png`;
+    }
+
+    function batchRenderDrawerBboxes() {
+      const imgEl = document.getElementById("batchDrawerImg");
+      const bboxLayer = document.getElementById("batchDrawerBboxLayer");
+      const sizeInfoEl = document.getElementById("batchDrawerPageSizeInfo");
+      if (!imgEl || !bboxLayer) return;
+
+      const cert = batchState.drawerCert || {};
+      const p = batchState.drawerPage;
+      const pageSizes = Array.isArray(cert.page_sizes_pt) ? cert.page_sizes_pt : [];
+      const ptSize = pageSizes[p - 1] || [595.25, 841.85];
+      const pageWidthPt = Number(ptSize[0]) || 595.25;
+      const pageHeightPt = Number(ptSize[1]) || 841.85;
+
+      const renderedWidth = imgEl.clientWidth || 595.25;
+      const scale = renderedWidth / pageWidthPt;
+
+      if (sizeInfoEl) {
+        sizeInfoEl.textContent = `PDF 坐标基准: ${pageWidthPt} × ${pageHeightPt} pt`;
+      }
+
+      const pageFindings = batchState.drawerFindings.filter(f => f.page === p && Array.isArray(f.bbox) && f.bbox.length === 4);
+      bboxLayer.innerHTML = pageFindings.map(f => {
+        const [x0, y0, x1, y1] = f.bbox;
+        const left = x0 * scale;
+        const top = y0 * scale;
+        const width = Math.max(12, (x1 - x0) * scale);
+        const height = Math.max(10, (y1 - y0) * scale);
+        const sKey = sevClassKey(f.severity);
+        const isSelected = batchState.drawerActiveFindingId === f.id;
+        return `
+          <div onclick="batchFocusDrawerFinding('${batchEscapeHtml(f.id)}')"
+               style="left:${left}px; top:${top}px; width:${width}px; height:${height}px;"
+               class="bbox-overlay ${sKey} ${isSelected ? 'active-box pulse-focus' : ''}"
+               title="${batchEscapeHtml(f.rule_id)} ${batchEscapeHtml(f.rule_name)} (${batchEscapeHtml(f.severity)})：${batchEscapeHtml(f.reason)}">
+            <span class="bbox-tag ${sKey} num-mono">${batchEscapeHtml(f.rule_id)} · ${batchEscapeHtml(f.severity)}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function batchRenderDrawerFindingsList() {
+      const findings = batchState.drawerFindings || [];
+      const summaryEl = document.getElementById("batchDrawerFindingsSummary");
+      const listEl = document.getElementById("batchDrawerFindingsList");
+      if (!listEl) return;
+
+      let err = 0, unver = 0, warn = 0;
+      findings.forEach(f => {
+        if (f.severity === "错误") err++;
+        else if (f.severity === "无法核验") unver++;
+        else warn++;
+      });
+      if (summaryEl) {
+        const rv = batchState.drawerReview;
+        summaryEl.textContent = `共 ${findings.length} 条发现（${err} 错误 · ${unver} 无法核验 · ${warn} 提示）`
+          + (rv && rv.must ? ` · 必审 ${rv.done}/${rv.must} 已处理` : "");
+      }
+      const allBtn = document.getElementById("batchConfirmAllBtn");
+      if (allBtn) allBtn.classList.toggle("hidden", findings.length === 0);
+
+      if (findings.length === 0) {
+        listEl.innerHTML = `
+          <div class="p-6 rounded-md border-2 border-dashed border-slate-300 bg-white text-center space-y-2 my-4">
+            <div class="text-sm font-bold text-slate-800">本份证书无异常发现</div>
+            <div class="text-xs text-slate-500">全部确定性规则核验通过，可直接放行。</div>
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = findings.map(f => {
+        const isSelected = batchState.drawerActiveFindingId === f.id;
+        const borderCol = f.severity === "错误"
+          ? (isSelected ? "border-red-600 ring-2 ring-red-500/20" : "border-red-300")
+          : (f.severity === "提示"
+            ? (isSelected ? "border-amber-600 ring-2 ring-amber-500/20" : "border-amber-300")
+            : (isSelected ? "border-slate-600 ring-2 ring-slate-500/20" : "border-slate-300"));
+
+        return `
+          <div onclick="batchFocusDrawerFinding('${batchEscapeHtml(f.id)}')"
+               class="bg-white rounded-md border-2 ${borderCol} p-3 shadow-sm transition cursor-pointer space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                ${sevBadgeHtml(f.severity)}
+                <span class="font-bold text-slate-900 text-xs num-mono">${batchEscapeHtml(f.rule_id)}</span>
+                <span class="font-bold text-slate-800 text-xs">${batchEscapeHtml(f.rule_name)}</span>
+              </div>
+              <span class="px-1.5 py-0.5 rounded bg-slate-800 text-white text-[10px] font-semibold num-mono">第 ${batchEscapeHtml(f.page)} 页</span>
+            </div>
+
+            <div class="bg-slate-100 border border-slate-200 rounded px-2.5 py-1.5 text-xs num-mono text-slate-900 font-medium">
+              <span class="text-slate-400 text-[10px] select-none block">原文抓取数据 (raw)：</span>
+              ${batchEscapeHtml(f.raw)}
+            </div>
+
+            <div class="text-xs space-y-1">
+              <div><span class="font-semibold text-slate-700">原因：</span><span class="text-slate-900">${batchEscapeHtml(f.reason)}</span></div>
+              <div><span class="font-semibold text-slate-700">建议：</span><span class="text-amber-900 font-medium">${batchEscapeHtml(f.suggestion)}</span></div>
+            </div>
+
+            <div class="pt-1.5 border-t border-slate-100 text-[11px] text-slate-500">
+              <span class="font-semibold text-slate-600">出处：</span>${batchEscapeHtml(f.source)}
+            </div>
+            ${batchReviewBlockHtml(f)}
+          </div>
+        `;
+      }).join("");
+    }
+
+    // ===== 审核员确认 / 驳回（只记在本次运行里，不改规则） =====
+    function batchReviewRowBadge(rv) {
+      if (!rv || !rv.reviewed) return "";
+      const txt = rv.rejected ? `已处理 · 驳回 ${rv.rejected}` : "已处理";
+      return `<span class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold whitespace-nowrap">✓ ${txt}</span>`;
+    }
+
+    function batchReviewBlockHtml(f) {
+      const st = f.review?.status || "待审";
+      let badge = `<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 border border-slate-300">待人工审核</span>`;
+      if (st === "确认") badge = `<span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold">✓ 已确认</span>`;
+      if (st === "驳回") badge = `<span class="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-900 border border-amber-400 font-bold">✕ 已驳回：${batchEscapeHtml(f.review.note || "")}</span>`;
+      const fid = batchEscapeHtml(f.id);
+      return `
+        <div class="pt-2 border-t border-slate-200 space-y-1.5" onclick="event.stopPropagation()">
+          <div class="flex items-center justify-between gap-2">
+            ${badge}
+            ${st !== "待审" ? `<button onclick="batchSubmitReview(['${fid}'], '撤销')" class="text-[10px] text-slate-500 hover:text-slate-800 underline">撤销</button>` : ""}
+          </div>
+          <div class="flex items-center gap-1.5">
+            <input type="text" id="batchNote-${fid}" value="${batchEscapeHtml(f.review?.note || "")}"
+                   placeholder="驳回理由（驳回时必填）"
+                   class="flex-1 bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-600" />
+            <button onclick="batchSubmitReview(['${fid}'], '确认')"
+                    class="px-2.5 py-1 rounded text-xs font-semibold transition ${st === '确认' ? 'bg-emerald-700 text-white' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'}">✓ 确认</button>
+            <button onclick="batchSubmitReview(['${fid}'], '驳回')"
+                    class="px-2.5 py-1 rounded text-xs font-semibold transition ${st === '驳回' ? 'bg-amber-700 text-white' : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'}">✕ 驳回</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function batchConfirmAllInDrawer() {
+      const ids = (batchState.drawerFindings || []).filter(f => !f.review).map(f => f.id);
+      if (ids.length) batchSubmitReview(ids, "确认");
+    }
+
+    async function batchSubmitReview(findingIds, status) {
+      let note = "";
+      if (status === "驳回") {
+        const el = document.getElementById(`batchNote-${findingIds[0]}`);
+        note = (el?.value || "").trim();
+        if (!note) {
+          if (el) { el.focus(); el.classList.add("border-red-500"); }
+          showToast("驳回必须写理由（仅作记录，不会修改规则）");
+          return;
+        }
+      }
+      let d;
+      try {
+        const r = await fetch(`/api/batch/${encodeURIComponent(batchState.jobId)}/review`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: batchState.drawerFile, finding_ids: findingIds, status, note })
+        });
+        if (!r.ok) throw new Error("review failed");
+        d = await r.json();
+      } catch (err) {
+        batchShowEngineError();
+        return;
+      }
+      batchState.drawerFindings = batchState.drawerFindings.map(f => ({ ...f, review: d.reviews[f.id] || null }));
+      batchState.drawerReview = d.review;
+      const row = (batchState.resultsData?.certs || []).find(c => c.file === d.file);
+      if (row) row.review = d.review;
+      batchRenderDrawerFindingsList();
+      batchRenderDoneView();
+    }
+
+    window.addEventListener("resize", () => {
+      if (batchState.drawerOpen) {
+        batchRenderDrawerBboxes();
+      }
+    });
+
+    // 初始化启动
+    window.addEventListener("DOMContentLoaded", () => {
+      batchRenderModule();
+    });
+  </script>
+</body>
+</html>

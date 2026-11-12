@@ -1,0 +1,63 @@
+{
+ "schema": 1,
+ "recorded_at": "2026-11-12 23:36:45",
+ "total": 1000,
+ "elapsed_sec": 1.6,
+ "flagged": 73,
+ "by_severity": {
+  "错误": 62,
+  "无法核验": 32,
+  "提示": 1158
+ },
+ "throughput_per_hour": 2243129,
+ "page_ext": "jpg",
+ "page_width_px": 1000,
+ "detail_count": 73,
+ "timeline": [
+  {
+   "t": 0.0,
+   "done": 0,
+   "flagged": 0
+  },
+  {
+   "t": 0.21,
+   "done": 0,
+   "flagged": 0
+  },
+  {
+   "t": 0.41,
+   "done": 152,
+   "flagged": 3
+  },
+  {
+   "t": 0.61,
+   "done": 314,
+   "flagged": 12
+  },
+  {
+   "t": 0.82,
+   "done": 430,
+   "flagged": 23
+  },
+  {
+   "t": 1.02,
+   "done": 588,
+   "flagged": 40
+  },
+  {
+   "t": 1.23,
+   "done": 750,
+   "flagged": 51
+  },
+  {
+   "t": 1.43,
+   "done": 910,
+   "flagged": 62
+  },
+  {
+   "t": 1.6,
+   "done": 1000,
+   "flagged": 73
+  }
+ ]
+}

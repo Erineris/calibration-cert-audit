@@ -1,0 +1,74 @@
+# 校准证书审核规则包 —— 程序照此判断，AI 一条都不判。
+# 每条：id / name / severity / 阈值参数 / source（出处）/ boundary（边界说明，最容易出现误报的地方）。
+# 界面「规则页」可直接改这里的阈值并保存，引擎下次运行即生效。
+version: 1
+rules:
+  R1:
+    name: 超差与结论冲突
+    enabled: true
+    source: 赛题给定规则 1：|修正值| > 允差 为超差
+    boundary: 等于允差不算超差；超差且已标 Fail 只提示，不算结论写错；无结论列不算错；结论未填不算错
+    equal_is_pass: true            # |修正值| == 允差 视为未超差
+    pass_words: [Pass, PASS, pass, 合格, 符合]
+    fail_words: [Fail, FAIL, fail, 不合格, 不符合]
+    severity_conflict: 错误        # 超差标 Pass / 未超差标 Fail
+    severity_over_marked_fail: 提示  # 超差且已标 Fail
+  R2:
+    name: 环境条件异常
+    enabled: true
+    source: 赛题给定规则 2：环境温度 20–30℃（含两端）、湿度 < 85%RH
+    boundary: 20、30℃ 两端算合格；只看「校准地点、环境条件」栏，不看校准点温度
+    temp_min: 20
+    temp_max: 30
+    temp_inclusive: true
+    rh_max: 85
+    rh_max_inclusive: false        # false = 等于 85 也算异常（规则原文「< 85」才合格）
+    severity: 错误
+  R3:
+    name: 校准点超范围
+    enabled: true
+    source: 赛题给定规则 3：温度点 −40–100℃、湿度点 5–98%RH，含两端
+    boundary: 两端在范围内；超范围只提示人工核验，不直接判错
+    ranges:
+      温度: {min: -40, max: 100, unit: ℃}
+      湿度: {min: 5, max: 98, unit: "%RH"}
+    severity: 提示
+  R4:
+    name: 标准器过期
+    enabled: true
+    source: 赛题给定规则 4：校准日期晚于标准器有效期 → 过期
+    boundary: 有效期当天算有效；每一台标准器都要查
+    due_date_inclusive: true       # 校准日期 == 有效期 仍有效
+    severity: 错误
+  R5:
+    name: 数据缺失或矛盾
+    enabled: true
+    source: 赛题给定规则 5：关键字段缺失、单位错、各页证书编号不一致
+    boundary: 缺失或识别不了 → 无法核验并说明原因，不许猜值
+    required_fields: [cert_no, calib_date, points, correction, tolerance]
+    units:
+      温度: ℃
+      湿度: "%RH"
+    severity_missing: 无法核验
+    severity_unit: 错误
+    severity_cert_no_mismatch: 错误
+  R6:
+    name: 历史一致性
+    enabled: true
+    source: 赛题评分项「历史一致性」
+    boundary: 不判对错，只提示变化，由审核员判断
+    compare_fields: [points, tolerance, maker, standards, model, name, serial_no]
+    severity: 提示
+  R7:
+    name: 模板残留
+    enabled: true
+    source: 自定（出证系统模板问题，归因到系统不归因到人）
+    boundary: 规则外的额外提示
+    pattern: '\{del_[^}]*\}'
+    severity: 提示
+  R0:
+    name: 抽取不一致
+    enabled: true
+    source: 自定兜底：程序解析与大模型抽取不一致 → 相关字段无法核验，交人
+    boundary: 没有大模型 key 时跳过（llm_agree=null），不算不一致
+    severity: 无法核验

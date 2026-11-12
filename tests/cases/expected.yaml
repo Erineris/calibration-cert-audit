@@ -1,0 +1,462 @@
+_说明:
+  格式: 文件名 → {base, desc, edits, expect:[{rule_id, severity, page?, hint?, forbid?, disputed?}], allow:[规则:等级]}
+  forbid: 命中的发现原文/理由里不该出现的字串（引用了错的数据），违反记「原文不符」
+  severity: 错误|无法核验 表示两者皆可
+  allow: 可接受的额外发现，不计误报；R5:* 表示任意等级的 R5
+  page: 期望页码，不符记「位置不符」不记漏报
+  disputed: 口径未定，单列不计入命中率
+  底板: base=底板 的条目路径在 tests/base/（虚构底板，由 tests/tools/make_base.py 生成）
+base_A.pdf:
+  base: 底板
+  desc: 底板：版式A 无结论列，无问题（考不误报）
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+base_B_errors.pdf:
+  base: 底板
+  desc: 底板：含多处真错的示例
+  expect:
+  - rule_id: R2
+    severity: 错误
+    page: 2
+    hint: '35'
+  - rule_id: R1
+    severity: 错误
+    page: 3
+    hint: '40'
+  - rule_id: R1
+    severity: 提示
+    page: 3
+    hint: '60'
+  - rule_id: R1
+    severity: 提示
+    page: 3
+    hint: '80'
+  - rule_id: R7
+    severity: 提示
+  allow: []
+base_2025.pdf:
+  base: 底板
+  desc: 底板：单份无规则问题
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+base_2026.pdf:
+  base: 底板
+  desc: 底板：单份无规则问题（第3页文字流乱序）
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_eq_tol_pass.pdf:
+  base: base_2025.pdf
+  desc: 温度10℃点 修正值 +0.1→+2.0（=允差±2.0）标 Pass：等于允差不算超差
+  edits:
+  - p3 '+0.1' → '+2.0'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_over_pass.pdf:
+  base: base_2025.pdf
+  desc: 温度20℃点 修正值 +0.3→+2.1（>±2.0）仍标 Pass：超差却标合格
+  edits:
+  - p3 '+0.3' → '+2.1'
+  expect:
+  - rule_id: R1
+    severity: 错误
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_under_fail.pdf:
+  base: base_2025.pdf
+  desc: 温度30℃点 +0.4 未超差，结论 Pass→Fail：未超差却标不合格
+  edits:
+  - p3 'Pass' → 'Fail'
+  expect:
+  - rule_id: R1
+    severity: 错误
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_over_fail.pdf:
+  base: base_2025.pdf
+  desc: 湿度60%RH点 +3→+6（>±5），结论 Pass→Fail：超差且已标 Fail 只提示
+  edits:
+  - p3 '+3' → '+6'
+  - p3 'Pass' → 'Fail'
+  expect:
+  - rule_id: R1
+    severity: 提示
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_neg_over_pass.pdf:
+  base: base_2025.pdf
+  desc: 温度20℃点 修正值 +0.3→-2.1（|−2.1|>±2.0）仍标 Pass：负向超差
+  edits:
+  - p3 '+0.3' → '-2.1'
+  expect:
+  - rule_id: R1
+    severity: 错误
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_blank_conc.pdf:
+  base: base_2025.pdf
+  desc: 温度30℃点 结论 Pass 删空：未填结论不算错
+  edits:
+  - p3 'Pass' → ''
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_A_eq_tol.pdf:
+  base: base_A.pdf
+  desc: 版式A（无结论列）温度-15℃点 +0.14→+0.50（=允差±0.50）：边界不算超差
+  edits:
+  - p3 '+0.14' → '+0.50'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_A_over_noconc.pdf:
+  base: base_A.pdf
+  desc: 版式A（无结论列）温度5℃点 +0.30→-0.51（>±0.50）：不构成结论冲突，只提示超差（按规则裁定：无结论列不构成冲突）
+  edits:
+  - p3 '+0.30' → '-0.51'
+  expect:
+  - rule_id: R1
+    severity: 提示
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r1_split_cell.pdf:
+  base: base_2026.pdf
+  desc: 2026 底板第3页被拆成「+0.」「6」的单元格改成「+2.」「6」=+2.6（>±2.0）标 Pass：考按坐标重排
+  edits:
+  - p3 '+0.' → '+2.'
+  expect:
+  - rule_id: R1
+    severity: 错误
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r2_t20.pdf:
+  base: base_2025.pdf
+  desc: 环境温度 23.5→20.0℃（下边界，合格）
+  edits:
+  - p2 '温度：23.5℃' → '温度：20.0℃'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r2_t30.pdf:
+  base: base_2025.pdf
+  desc: 环境温度 23.5→30.0℃（上边界，合格）
+  edits:
+  - p2 '温度：23.5℃' → '温度：30.0℃'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r2_t19_9.pdf:
+  base: base_2025.pdf
+  desc: 环境温度 23.5→19.9℃（超下限）
+  edits:
+  - p2 '温度：23.5℃' → '温度：19.9℃'
+  expect:
+  - rule_id: R2
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r2_rh85.pdf:
+  base: base_2025.pdf
+  desc: 环境湿度 56→85%（≥85 不合格）
+  edits:
+  - p2 '相对湿度：56%' → '相对湿度：85%'
+  expect:
+  - rule_id: R2
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r2_rh84.pdf:
+  base: base_2025.pdf
+  desc: 环境湿度 56→84%（<85 合格）
+  edits:
+  - p2 '相对湿度：56%' → '相对湿度：84%'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r2_A_t30_1.pdf:
+  base: base_A.pdf
+  desc: 版式A 环境温度 23.2→30.1℃（超上限）
+  edits:
+  - p2 '温度：23.2℃' → '温度：30.1℃'
+  expect:
+  - rule_id: R2
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r3_t100.pdf:
+  base: base_2025.pdf
+  desc: 温度校准点 10→100℃（上边界，在范围）
+  edits:
+  - p3 '10' → '100'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r3_t101.pdf:
+  base: base_2025.pdf
+  desc: 温度校准点 10→101℃（超范围）
+  edits:
+  - p3 '10' → '101'
+  expect:
+  - rule_id: R3
+    severity: 提示
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r3_tm40.pdf:
+  base: base_A.pdf
+  desc: 版式A 温度校准点 -15→-40℃（下边界，在范围）
+  edits:
+  - p3 '-15' → '-40'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r3_tm41.pdf:
+  base: base_A.pdf
+  desc: 版式A 温度校准点 -15→-41℃（超范围）
+  edits:
+  - p3 '-15' → '-41'
+  expect:
+  - rule_id: R3
+    severity: 提示
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r3_rh4.pdf:
+  base: base_2025.pdf
+  desc: 湿度校准点 40→4%RH（超范围）
+  edits:
+  - p3 '40' → '4'
+  expect:
+  - rule_id: R3
+    severity: 提示
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r3_rh98.pdf:
+  base: base_2025.pdf
+  desc: 湿度校准点 80→98%RH（上边界，在范围）
+  edits:
+  - p3 '80' → '98'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r4_eq.pdf:
+  base: base_2025.pdf
+  desc: 两台标准器有效期都改成 = 校准日期 2025/11/17（当天有效）
+  edits:
+  - p2 '2026/10/13' → '2025/11/17'
+  - p2 '2026/10/13' → '2025/11/17'
+  expect:
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r4_first_daybefore.pdf:
+  base: base_2025.pdf
+  desc: 第一台标准器有效期 → 2025/11/16（早校准日期一天，过期）
+  edits:
+  - p2 '2026/10/13' → '2025/11/16'
+  expect:
+  - rule_id: R4
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r4_second_only.pdf:
+  base: base_2025.pdf
+  desc: 只有第二台（露点）标准器有效期 → 2025/11/16（过期）
+  edits:
+  - p2 '2026/10/13' → '2025/11/16'
+  expect:
+  - rule_id: R4
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r4_A_second_only.pdf:
+  base: base_A.pdf
+  desc: 版式A 只有第二台（露点）标准器有效期 → 2026/10/27，早于校准日期 2026/10/28
+  edits:
+  - p2 '2027/10/01' → '2026/10/27'
+  expect:
+  - rule_id: R4
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r4_second_only_26.pdf:
+  base: base_2026.pdf
+  desc: 2026 底板版式（露点在前）只有第二台（温度）有效期 → 2026/10/28，早于校准日期 2026/10/29
+  edits:
+  - p2 '2027/10/01' → '2026/10/28'
+  expect:
+  - rule_id: R4
+    severity: 错误
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow: []
+r5_no_certno_p1.pdf:
+  base: base_2025.pdf
+  desc: 删第1页证书编号（第2、3页保留）
+  edits:
+  - p1 'C2599000000103' → ''
+  expect:
+  - rule_id: R5
+    severity: 错误|无法核验
+    page: 1
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+r5_no_certno_all.pdf:
+  base: base_2025.pdf
+  desc: 三页证书编号全删
+  edits:
+  - p1 'C2599000000103' → ''
+  - p2 '证 书 编 号          C2599000000103' → '证 书 编 号'
+  - p3 '证 书 编 号          C2599000000103' → '证 书 编 号'
+  expect:
+  - rule_id: R5
+    severity: 错误|无法核验
+    forbid: C2588000000203
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+r5_no_certno_p2.pdf:
+  base: base_2025.pdf
+  desc: 只删第2页证书编号（第1、3页保留）：不得把标准器溯源证书号 C2588000000203 当成本页编号
+  edits:
+  - p2 '证 书 编 号          C2599000000103' → '证 书 编 号'
+  expect:
+  - rule_id: R5
+    severity: 错误|无法核验
+    forbid: C2588000000203
+    page: 2
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+r5_page_mismatch.pdf:
+  base: base_2025.pdf
+  desc: 第3页证书编号末位 3→4（与第1、2页不一致）
+  edits:
+  - p3 '证 书 编 号          C2599000000103' → '证 书 编 号          C2599000000104'
+  expect:
+  - rule_id: R5
+    severity: 错误
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+r5_unit_F.pdf:
+  base: base_2025.pdf
+  desc: 第3页温度部分表头单位 ℃→℉（校准点/修正值/允差三列）
+  edits:
+  - p3 '校准点(℃)' → '校准点(℉)'
+  - p3 '修正值(℃)' → '修正值(℉)'
+  - p3 '允差(℃)' → '允差(℉)'
+  expect:
+  - rule_id: R5
+    severity: 错误
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+  - R1:无法核验
+  - R3:无法核验
+r5_missing_corr.pdf:
+  base: base_2025.pdf
+  desc: 删温度30℃点修正值 +0.4
+  edits:
+  - p3 '+0.4' → ''
+  expect:
+  - rule_id: R5
+    severity: 错误|无法核验
+    page: 3
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+  - R1:无法核验
+r5_missing_date.pdf:
+  base: base_2025.pdf
+  desc: 删第1页校准日期 2025/11/17
+  edits:
+  - p1 '校  准  日  期      2025/11/17' → '校  准  日  期'
+  expect:
+  - rule_id: R5
+    severity: 错误|无法核验
+    page: 1
+  - rule_id: R7
+    severity: 提示
+  allow:
+  - R5:*
+  - R4:无法核验
+r7_removed.pdf:
+  base: base_2025.pdf
+  desc: 删第1页占位符 {del_…}：不应再报 R7
+  edits:
+  - p1 '{del_下次校准日期=Y,del_结论=N}' → ''
+  expect: []
+  allow: []
+_pairs:
+  示例历史对比:
+    files:
+    - base_2025.pdf
+    - base_2026.pdf
+    only_rules:
+    - R6
+    desc: 2025→2026 示例报告历史对比：校准点 10→15、制造商 空→示例制造厂、标准器 DP-A01→DP-B01
+    expect:
+    - rule_id: R6
+      severity: 提示
+      hint: '15'
+    - rule_id: R6
+      severity: 提示
+      hint: 示例制造厂
+    - rule_id: R6
+      severity: 提示
+      hint: DP-B01
+    allow: []

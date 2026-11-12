@@ -1,0 +1,5 @@
+# 校准证书辅助审核：引擎 + 审核台 + 测试所需依赖（版本下限，已在 Python 3.13 + 下列最新版上跑通）
+pymupdf>=1.24.3     # PDF 解析与渲染；测试里生成/改写 PDF 也用它（自带 CJK 字体）
+pyyaml>=6.0         # 规则包 rules.yaml
+openpyxl>=3.1       # 审核台导出 Excel
+streamlit>=1.30     # 审核台界面
