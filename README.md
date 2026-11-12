@@ -8,7 +8,7 @@
 
 ![点开一份有问题的证书：原页红框 + 逐条确认或驳回](docs/screenshot.png)
 
-**在线演示**：`<仓库发布后填入 GitHub Pages 地址>`
+**在线演示**：https://erineris.github.io/calibration-cert-audit/
 在线版回放的是真实引擎审核 1000 份虚构证书的录制结果，不是实时计算。实时版按下面三步在本地跑。
 
 ## 本地跑起来
